@@ -33,7 +33,10 @@ class NearestNeighborClassifier:
         Returns:
             tuple of x and y both torch.Tensor's.
         """
-        raise NotImplementedError
+        x_tensor = torch.as_tensor(x, dtype=torch.float32)
+        y_tensor = torch.as_tensor(y, dtype=torch.float32)
+        return x_tensor, y_tensor
+        # raise NotImplementedError
 
     @classmethod
     def compute_data_statistics(cls, x: torch.Tensor) -> tuple[torch.Tensor]:
@@ -48,7 +51,10 @@ class NearestNeighborClassifier:
             tuple of mean and standard deviation of the data.
             Both should have a shape [1, D]
         """
-        raise NotImplementedError
+        mean = torch.mean(x, dim=0, keepdim=True)
+        std = torch.std(x, dim=0, keepdim=True)
+        return mean, std
+        # raise NotImplementedError
 
     def input_normalization(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -60,7 +66,9 @@ class NearestNeighborClassifier:
         Returns:
             normalized 2D tensor shape = x.shape
         """
-        return (x - self.data_mean) / self.data_std
+        # return (x - self.data_mean) / self.data_std
+        epsilon = 1e-8 # to prevent division by zero edge case
+        return (x - self.data_mean) / (self.data_std + epsilon)
 
     def get_nearest_neighbor(self, x: torch.Tensor) -> tuple[torch.Tensor]:
         """
@@ -72,9 +80,10 @@ class NearestNeighborClassifier:
         Returns:
             tuple of the nearest neighbor data point [D] and its label [1]
         """
-        raise NotImplementedError
+        # raise NotImplementedError
         x = self.input_normalization(x)
-        idx = ...  # Implement me:
+        # idx = ...  # Implement me:
+        idx = torch.argmin(torch.norm(self.data_normalized - x, dim=1))
         return self.data[idx], self.label[idx]
 
     def get_k_nearest_neighbor(self, x: torch.Tensor, k: int) -> tuple[torch.Tensor]:
@@ -90,9 +99,10 @@ class NearestNeighborClassifier:
             data points will be size (k, D)
             labels will be size (k,)
         """
-        raise NotImplementedError
+        # raise NotImplementedError
         x = self.input_normalization(x)
-        idx = ...  # Implement me:
+        # idx = ...  # Implement me:
+        _, idx = torch.topk(torch.norm(self.data_normalized - x, dim=1), k, largest=False)
         return self.data[idx], self.label[idx]
 
     def knn_regression(
@@ -111,4 +121,8 @@ class NearestNeighborClassifier:
         Returns:
             average value of labels from the k neighbors. Tensor of shape [1]
         """
-        raise NotImplementedError
+        # raise NotImplementedError
+        x = self.input_normalization(x)
+        _, labels = self.get_k_nearest_neighbor(x, k)
+        average_label = torch.mean(labels)
+        return average_label
