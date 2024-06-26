@@ -163,6 +163,11 @@ cython_debug/
 
 # env specific directories
 
+# Homework 1
+Homework_1\homework\__pycache__\
+Homework_1\homework\__init__.py
+Homework_1\grader\__pycache__
+
 # Module 1
 Notes\Module_1\flowers
 Notes\Module_1\.venv
