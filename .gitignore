@@ -166,16 +166,19 @@ cython_debug/
 # Homework 1
 Homework_1\homework\__pycache__\
 Homework_1\homework\__init__.py
+Homework_1/homework/__init__.py
 
 # Homework 2
 Homework_2\homework\__pycache__\
 Homework_2\homework\__init__.py
 Homework_2\grader\__pycache__\
-Homework_2\homework\*.th
-Homework_2\log*\
-Homework_2\data\
-Homework_2\homework\data\
+Homework_2/homework/*.th
+Homework_2/logs/
+Homework_2/log
+Homework_2/homework/data/
+Homework_2/data/*
 
 # Module 1
 Notes\Module_1\flowers
 Notes\Module_1\.venv
+Notes/Module_1/flowers/flowers-102/102flowers.tgz
