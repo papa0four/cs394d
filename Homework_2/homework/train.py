@@ -40,6 +40,8 @@ def train(
     model.train()
 
     train_data = load_data("data/train", shuffle=True, batch_size=batch_size, num_workers=2)
+
+    # train_data.Normalize()
     val_data = load_data("data/val", shuffle=False)
 
     # create loss function and optimizer
@@ -132,7 +134,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--exp_dir", type=str, default="logs")
     parser.add_argument("--model_name", type=str, required=True)
-    parser.add_argument("--num_epoch", type=int, default=60)
+    parser.add_argument("--num_epoch", type=int, default=50)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--seed", type=int, default=2024)
 
