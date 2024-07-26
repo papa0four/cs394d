@@ -27,7 +27,13 @@ class Classifier(nn.Module):
         self.register_buffer("input_std", torch.as_tensor(INPUT_STD))
 
         # TODO: implement
-        pass
+        self.conv1 = nn.Conv2d(in_channels, 16, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.fc1 = nn.Linear(64 * 8 * 8, 128)
+        self.fc2 = nn.Linear(128, num_classes)
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.relu = nn.ReLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -41,7 +47,20 @@ class Classifier(nn.Module):
         z = (x - self.input_mean[None, :, None, None]) / self.input_std[None, :, None, None]
 
         # TODO: replace with actual forward pass
-        logits = torch.randn(x.size(0), 6)
+        # logits = torch.randn(x.size(0), 6)
+        z = self.relu(self.conv1(z))
+        z = self.pool(z)
+        z = self.relu(self.conv2(z))
+        z = self.pool(z)
+        z = self.relu(self.conv3(z))
+        z = self.pool(z)
+
+        # Flatten
+        z = z.view(z.size(0), -1)
+
+        # Fully connected layers
+        z = self.relu(self.fc1(z))
+        logits = self.fc2(z)
 
         return logits
 

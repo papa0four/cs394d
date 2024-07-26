@@ -35,7 +35,9 @@ class BaseGrader(Grader):
         elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
             self.device = torch.device("mps")
         else:
-            raise RuntimeError("No hardware acceleration available")
+            # raise RuntimeError("No hardware acceleration available")
+            print("GPU not available, using CPU")
+            self.device = torch.device("cpu")
 
         self.data = None
 
