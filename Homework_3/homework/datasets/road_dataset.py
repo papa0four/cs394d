@@ -1,10 +1,13 @@
 from pathlib import Path
 
 import numpy as np
+import torch
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 from . import road_transforms
 from .road_utils import Track
+
+from torchvision import transforms as tv_transforms
 
 
 class RoadDataset(Dataset):
@@ -40,8 +43,13 @@ class RoadDataset(Dataset):
             )
         elif transform_pipeline == "aug":
             # TODO: construct your custom augmentation
-            pass
-
+            return road_transforms.Compose([
+                road_transforms.ImageLoader(self.episode_path),
+                road_transforms.DepthLoader(self.episode_path),
+                road_transforms.TrackProcessor(self.track),
+                road_transforms.RandomHorizontalFlip(p=0.5),
+            ])
+                    
         if xform is None:
             raise ValueError(f"Invalid transform {transform_pipeline} specified!")
 

@@ -36,8 +36,19 @@ class SuperTuxDataset(Dataset):
             xform = transforms.ToTensor()
         elif transform_pipeline == "aug":
             # TODO: construct your custom augmentation
+            # xform = transforms.Compose(
+            #     [
+            #         transforms.ToTensor(),
+            #     ]
+            # )
+
+             # Custom augmentation pipeline
             xform = transforms.Compose(
                 [
+                    transforms.RandomHorizontalFlip(p=0.5),
+                    transforms.RandomRotation(degrees=10),
+                    transforms.RandomResizedCrop(size=(64, 64), scale=(0.8, 1.0)),
+                    transforms.RandomGrayscale(p=0.1),
                     transforms.ToTensor(),
                 ]
             )

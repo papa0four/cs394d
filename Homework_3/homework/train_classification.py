@@ -5,6 +5,7 @@ from pathlib import Path
 import torch
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 # Add homework directory to sys.path
 sys.path.append(str(Path(__file__).resolve().parent))
@@ -18,8 +19,9 @@ def train(
     model_name: str = "classifier",
     num_epoch: int = 20,
     lr: float = 0.001,
-    batch_size: int = 64,
+    batch_size: int = 32,
     seed: int = 2024,
+    patience: int = 5,
     **kwargs,
 ):
     if torch.cuda.is_available():
@@ -28,25 +30,24 @@ def train(
         print("CUDA not available, using CPU")
         device = torch.device("cpu")
 
-    # Set random seed for reproducibility
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-    # Directory with timestamp to save tensorboard logs and model checkpoints
     log_dir = Path(exp_dir) / f"classifier_{datetime.now().strftime('%m%d_%H%M%S')}"
     logger = SummaryWriter(log_dir)
 
-    # Model, Loss, Optimizer
     model = Classifier(**kwargs).to(device)
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
+    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=2, factor=0.5)
     metric = AccuracyMetric()
 
-    # Data Loading
-    train_loader = load_data('classification_data/train', transform_pipeline='default', num_workers=2, batch_size=batch_size, shuffle=True)
-    val_loader = load_data('classification_data/val', transform_pipeline='default', num_workers=2, batch_size=batch_size, shuffle=False)
+    train_loader = load_data('classification_data/train', transform_pipeline='aug', num_workers=4, batch_size=batch_size, shuffle=True)
+    val_loader = load_data('classification_data/val', transform_pipeline='default', num_workers=4, batch_size=batch_size, shuffle=False)
 
-    # Training Loop
+    best_val_loss = float('inf')
+    epochs_no_improve = 0
+
     global_step = 0
     for epoch in range(num_epoch):
         model.train()
@@ -62,7 +63,6 @@ def train(
             optimizer.step()
             running_loss += loss.item()
 
-            # Convert logits to predicted class indices
             preds = torch.argmax(outputs, dim=1)
             metric.add(preds, labels)
 
@@ -77,7 +77,6 @@ def train(
 
         logger.add_scalar('epoch_train_accuracy', epoch_metric, epoch)
 
-        # Validation Loop
         model.eval()
         metric.reset()
         val_loss = 0.0
@@ -88,7 +87,6 @@ def train(
                 loss = criterion(outputs, labels)
                 val_loss += loss.item()
 
-                # Convert logits to predicted class indices
                 preds = torch.argmax(outputs, dim=1)
                 metric.add(preds, labels)
 
@@ -99,8 +97,18 @@ def train(
         logger.add_scalar('val_loss', val_loss, epoch)
         logger.add_scalar('val_accuracy', val_metric, epoch)
 
-    # Save the model
-    save_model(model)
+        scheduler.step(val_loss)
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            epochs_no_improve = 0
+            save_model(model)
+        else:
+            epochs_no_improve += 1
+            if epochs_no_improve >= patience:
+                print("Early stopping triggered")
+                break
+
     logger.close()
 
 if __name__ == "__main__":
@@ -110,12 +118,8 @@ if __name__ == "__main__":
     parser.add_argument("--model_name", type=str, required=True)
     parser.add_argument("--num_epoch", type=int, default=20)
     parser.add_argument("--lr", type=float, default=0.001)
-    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--seed", type=int, default=2024)
+    parser.add_argument("--patience", type=int, default=5)
 
-    # Additional model parameters can be passed via kwargs
-    # parser.add_argument("--in_channels", type=int, default=3)
-    # parser.add_argument("--num_classes", type=int, default=6)
-
-    # Pass all arguments to train
     train(**vars(parser.parse_args()))
