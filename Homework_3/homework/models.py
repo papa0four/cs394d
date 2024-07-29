@@ -2,6 +2,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 HOMEWORK_DIR = Path(__file__).resolve().parent
 INPUT_MEAN = [0.2788, 0.2657, 0.2629]
@@ -27,12 +28,21 @@ class Classifier(nn.Module):
         self.register_buffer("input_std", torch.as_tensor(INPUT_STD))
 
         # TODO: implement
+        # self.conv1 = nn.Conv2d(in_channels, 16, kernel_size=3, padding=1)
+        # self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+        # self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        # self.fc1 = nn.Linear(64 * 8 * 8, 128)
+        # self.fc2 = nn.Linear(128, num_classes)
+        # self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        # self.relu = nn.ReLU()
         self.conv1 = nn.Conv2d(in_channels, 16, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(16)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(64 * 8 * 8, 128)
-        self.fc2 = nn.Linear(128, num_classes)
+        self.bn2 = nn.BatchNorm2d(32)
+        self.fc1 = nn.Linear(32 * 16 * 16, 64)
+        self.fc2 = nn.Linear(64, num_classes)
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.dropout = nn.Dropout(0.5)
         self.relu = nn.ReLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -48,18 +58,29 @@ class Classifier(nn.Module):
 
         # TODO: replace with actual forward pass
         # logits = torch.randn(x.size(0), 6)
-        z = self.relu(self.conv1(z))
+        # z = self.relu(self.conv1(z))
+        # z = self.pool(z)
+        # z = self.relu(self.conv2(z))
+        # z = self.pool(z)
+        # z = self.relu(self.conv3(z))
+        # z = self.pool(z)
+
+        # # Flatten
+        # z = z.view(z.size(0), -1)
+
+        # # Fully connected layers
+        # z = self.relu(self.fc1(z))
+        # logits = self.fc2(z)
+
+        # return logits
+        z = self.relu(self.bn1(self.conv1(z)))
         z = self.pool(z)
-        z = self.relu(self.conv2(z))
-        z = self.pool(z)
-        z = self.relu(self.conv3(z))
+        z = self.relu(self.bn2(self.conv2(z)))
         z = self.pool(z)
 
-        # Flatten
         z = z.view(z.size(0), -1)
-
-        # Fully connected layers
         z = self.relu(self.fc1(z))
+        z = self.dropout(z)
         logits = self.fc2(z)
 
         return logits
@@ -79,12 +100,8 @@ class Classifier(nn.Module):
         return self(x).argmax(dim=1)
 
 
-class Detector(torch.nn.Module):
-    def __init__(
-        self,
-        in_channels: int = 3,
-        num_classes: int = 3,
-    ):
+class Detector(nn.Module):
+    def __init__(self, in_channels=3, num_classes=3):
         """
         A single model that performs segmentation and depth regression
 
@@ -97,8 +114,41 @@ class Detector(torch.nn.Module):
         self.register_buffer("input_mean", torch.as_tensor(INPUT_MEAN))
         self.register_buffer("input_std", torch.as_tensor(INPUT_STD))
 
-        # TODO: implement
-        pass
+        self.enc1 = self.conv_block(in_channels, 8)
+        self.enc2 = self.conv_block(8, 16)
+        self.enc3 = self.conv_block(16, 32)
+        self.enc4 = self.conv_block(32, 64)
+
+        self.bottleneck = self.conv_block(64, 128)
+
+        self.dec_seg4 = self.upconv_block(128, 64)
+        self.dec_seg3 = self.upconv_block(64, 32)
+        self.dec_seg2 = self.upconv_block(32, 16)
+        self.dec_seg1 = self.upconv_block(16, 8)
+        self.seg_head = nn.Conv2d(8, num_classes, kernel_size=1)
+
+        self.dec_depth4 = self.upconv_block(128, 64)
+        self.dec_depth3 = self.upconv_block(64, 32)
+        self.dec_depth2 = self.upconv_block(32, 16)
+        self.dec_depth1 = self.upconv_block(16, 8)
+        self.depth_head = nn.Conv2d(8, 1, kernel_size=1)
+
+    def conv_block(self, in_channels, out_channels, kernel_size=3, padding=1, stride=1):
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size, stride, padding),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+
+    def upconv_block(self, in_channels, out_channels, kernel_size=2, stride=2):
+        return nn.Sequential(
+            nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -113,14 +163,43 @@ class Detector(torch.nn.Module):
                 - logits (b, num_classes, h, w)
                 - depth (b, h, w)
         """
-        # optional: normalizes the input
+        # Normalize input
         z = (x - self.input_mean[None, :, None, None]) / self.input_std[None, :, None, None]
 
-        # TODO: replace with actual forward pass
-        logits = torch.randn(x.size(0), 3, x.size(2), x.size(3))
-        raw_depth = torch.rand(x.size(0), x.size(2), x.size(3))
+        e1 = self.enc1(z)
+        e2 = self.enc2(F.max_pool2d(e1, 2))
+        e3 = self.enc3(F.max_pool2d(e2, 2))
+        e4 = self.enc4(F.max_pool2d(e3, 2))
 
-        return logits, raw_depth
+        b = self.bottleneck(F.max_pool2d(e4, 2))
+
+        d4_seg = self.dec_seg4(F.interpolate(b, scale_factor=2, mode='bilinear', align_corners=True))
+        d4_seg = self.center_crop(d4_seg, e4.size()[2:])
+        d3_seg = self.dec_seg3(F.interpolate(d4_seg + e4, scale_factor=2, mode='bilinear', align_corners=True))
+        d3_seg = self.center_crop(d3_seg, e3.size()[2:])
+        d2_seg = self.dec_seg2(F.interpolate(d3_seg + e3, scale_factor=2, mode='bilinear', align_corners=True))
+        d2_seg = self.center_crop(d2_seg, e2.size()[2:])
+        d1_seg = self.dec_seg1(F.interpolate(d2_seg + e2, scale_factor=2, mode='bilinear', align_corners=True))
+        d1_seg = self.center_crop(d1_seg, e1.size()[2:])
+        seg_logits = self.seg_head(F.interpolate(d1_seg + e1, size=(96, 128), mode='bilinear', align_corners=True))
+
+        d4_depth = self.dec_depth4(F.interpolate(b, scale_factor=2, mode='bilinear', align_corners=True))
+        d4_depth = self.center_crop(d4_depth, e4.size()[2:])
+        d3_depth = self.dec_depth3(F.interpolate(d4_depth + e4, scale_factor=2, mode='bilinear', align_corners=True))
+        d3_depth = self.center_crop(d3_depth, e3.size()[2:])
+        d2_depth = self.dec_depth2(F.interpolate(d3_depth + e3, scale_factor=2, mode='bilinear', align_corners=True))
+        d2_depth = self.center_crop(d2_depth, e2.size()[2:])
+        d1_depth = self.dec_depth1(F.interpolate(d2_depth + e2, scale_factor=2, mode='bilinear', align_corners=True))
+        d1_depth = self.center_crop(d1_depth, e1.size()[2:])
+        depth = self.depth_head(F.interpolate(d1_depth + e1, size=(96, 128), mode='bilinear', align_corners=True))
+
+        return seg_logits, depth.squeeze(1)
+    
+    def center_crop(self, layer, target_size):
+        _, _, layer_height, layer_width = layer.size()
+        diff_y = (layer_height - target_size[0]) // 2
+        diff_x = (layer_width - target_size[1]) // 2
+        return layer[:, :, diff_y:(diff_y + target_size[0]), diff_x:(diff_x + target_size[1])]
 
     def predict(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -135,12 +214,9 @@ class Detector(torch.nn.Module):
                 - pred: class labels {0, 1, 2} with shape (b, h, w)
                 - depth: normalized depth [0, 1] with shape (b, h, w)
         """
-        logits, raw_depth = self(x)
+        logits, raw_depth = self.forward(x)
         pred = logits.argmax(dim=1)
-
-        # Optional additional post-processing for depth only if needed
         depth = raw_depth
-
         return pred, depth
 
 

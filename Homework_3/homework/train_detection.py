@@ -9,16 +9,16 @@ from torch.utils.tensorboard import SummaryWriter
 # Add homework directory to sys.path
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from homework.models import Classifier, save_model
-from homework.datasets.classification_dataset import load_data
-from homework.metrics import AccuracyMetric
+from homework.models import Detector, save_model
+from homework.datasets.road_dataset import load_data
+from homework.metrics import DetectionMetric
 
 def train(
     exp_dir: str = "logs",
-    model_name: str = "classifier",
+    model_name: str = "detector",
     num_epoch: int = 20,
     lr: float = 0.001,
-    batch_size: int = 64,
+    batch_size: int = 32,
     seed: int = 2024,
     **kwargs,
 ):
@@ -33,18 +33,19 @@ def train(
     torch.cuda.manual_seed_all(seed)
 
     # Directory with timestamp to save tensorboard logs and model checkpoints
-    log_dir = Path(exp_dir) / f"classifier_{datetime.now().strftime('%m%d_%H%M%S')}"
+    log_dir = Path(exp_dir) / f"detector_{datetime.now().strftime('%m%d_%H%M%S')}"
     logger = SummaryWriter(log_dir)
 
     # Model, Loss, Optimizer
-    model = Classifier(**kwargs).to(device)
-    criterion = torch.nn.CrossEntropyLoss()
+    model = Detector(**kwargs).to(device)
+    criterion_seg = torch.nn.CrossEntropyLoss()
+    criterion_depth = torch.nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    metric = AccuracyMetric()
+    metric = DetectionMetric(num_classes=3)
 
     # Data Loading
-    train_loader = load_data('classification_data/train', transform_pipeline='default', num_workers=2, batch_size=batch_size, shuffle=True)
-    val_loader = load_data('classification_data/val', transform_pipeline='default', num_workers=2, batch_size=batch_size, shuffle=False)
+    train_loader = load_data('road_data/train', transform_pipeline='default', num_workers=2, batch_size=batch_size, shuffle=True)
+    val_loader = load_data('road_data/val', transform_pipeline='default', num_workers=2, batch_size=batch_size, shuffle=False)
 
     # Training Loop
     global_step = 0
@@ -52,21 +53,24 @@ def train(
         model.train()
         metric.reset()
         running_loss = 0.0
-        for images, labels in train_loader:
-            images, labels = images.to(device), labels.to(device)
+        for batch in train_loader:
+            images, seg_targets, depth_targets = batch["image"], batch["track"], batch["depth"]
+            images, seg_targets, depth_targets = images.to(device), seg_targets.to(device), depth_targets.to(device)
 
             optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
+            seg_output, depth_output = model(images)
+            loss_seg = criterion_seg(seg_output, seg_targets)
+            loss_depth = criterion_depth(depth_output, depth_targets)
+            loss = loss_seg + loss_depth
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
 
-            # Convert logits to predicted class indices
-            preds = torch.argmax(outputs, dim=1)
-            metric.add(preds, labels)
+            preds = seg_output.argmax(dim=1)
+            metric.add(preds, seg_targets, depth_output, depth_targets)
 
-            train_accuracy = metric.compute()["accuracy"]
+            train_metrics = metric.compute()
+            train_accuracy = train_metrics["accuracy"]
             logger.add_scalar('train_loss', loss.item(), global_step)
             logger.add_scalar('train_accuracy', train_accuracy, global_step)
             global_step += 1
@@ -82,15 +86,17 @@ def train(
         metric.reset()
         val_loss = 0.0
         with torch.no_grad():
-            for images, labels in val_loader:
-                images, labels = images.to(device), labels.to(device)
-                outputs = model(images)
-                loss = criterion(outputs, labels)
+            for batch in val_loader:
+                images, seg_targets, depth_targets = batch["image"], batch["track"], batch["depth"]
+                images, seg_targets, depth_targets = images.to(device), seg_targets.to(device), depth_targets.to(device)
+                seg_output, depth_output = model(images)
+                loss_seg = criterion_seg(seg_output, seg_targets)
+                loss_depth = criterion_depth(depth_output, depth_targets)
+                loss = loss_seg + loss_depth
                 val_loss += loss.item()
 
-                # Convert logits to predicted class indices
-                preds = torch.argmax(outputs, dim=1)
-                metric.add(preds, labels)
+                preds = seg_output.argmax(dim=1)
+                metric.add(preds, seg_targets, depth_output, depth_targets)
 
         val_loss /= len(val_loader)
         val_metric = metric.compute()["accuracy"]
@@ -110,12 +116,12 @@ if __name__ == "__main__":
     parser.add_argument("--model_name", type=str, required=True)
     parser.add_argument("--num_epoch", type=int, default=20)
     parser.add_argument("--lr", type=float, default=0.001)
-    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--seed", type=int, default=2024)
 
     # Additional model parameters can be passed via kwargs
     # parser.add_argument("--in_channels", type=int, default=3)
-    # parser.add_argument("--num_classes", type=int, default=6)
+    # parser.add_argument("--num_classes", type=int, default=3)
 
     # Pass all arguments to train
     train(**vars(parser.parse_args()))
